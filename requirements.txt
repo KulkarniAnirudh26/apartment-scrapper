@@ -1,0 +1,7 @@
+httpx
+beautifulsoup4
+lxml
+playwright
+anthropic
+python-dotenv
+matplotlib   # only used by history.py --plot

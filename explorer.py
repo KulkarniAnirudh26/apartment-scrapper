@@ -1,0 +1,570 @@
+"""Build `plots/explorer.html` - the interactive size-vs-rent page.
+
+The PNG and `recommendations.md` are frozen at one filter. This writes a single
+self-contained page where the thresholds are controls: move a slider and both the
+chart and the shortlist recompute.
+
+The data is embedded rather than read from the CSV at load time because a page
+opened over `file://` cannot fetch a sibling file - embedding is what lets the
+page work by double-clicking it, offline, with no server.
+
+`recommend()` in visualize.py uses the thresholds only to *filter*; every other
+value it needs is threshold-independent. So Python precomputes one record per
+row here and the page's JavaScript only re-filters and re-ranks.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+
+from visualize import (_city, _display_name, _dollars, _domain, _identity,
+                       _is_start_price, _num, _phone, _plan_text, _priced,
+                       _rent, _trends, _unit_key)
+
+
+def _records(snapshot: list[dict], hist: list[dict]) -> list[dict]:
+    """One JSON-ready record per priced floor plan."""
+    trends = _trends(hist)
+    out = []
+    for r in _priced(snapshot):
+        name = _display_name(r)
+        rent, sqft = _rent(r), _num(r["sqft"])
+        pts = trends.get(_identity(r) + _unit_key(r), [])
+        if len(pts) < 2 or pts[0][1] == pts[-1][1]:
+            trend = "flat" if pts else "new"
+        else:
+            delta = pts[-1][1] - pts[0][1]
+            trend = f"{_dollars(pts[0][1])} → {_dollars(pts[-1][1])} ({delta:+,.0f})"
+        out.append({
+            "name": name,
+            "plan": _plan_text(r.get("floorplan_name"), name),
+            "sqft": round(sqft),
+            "rent": round(rent),
+            "ppsf": round(rent / sqft, 3),
+            "city": _city(r["address"]),
+            "start": _is_start_price(r),
+            # the two keys the shortlist dedupes on
+            "dom": _domain(r["source_url"]),
+            "com": r["community_name"],
+            "url": r["source_url"],
+            "phone": _phone(r.get("phone")),
+            "addr": r["address"],
+            "hist": [[t.strftime("%b %d %H:%M"), y] for t, y in pts],
+            "trend": trend,
+        })
+    # CSV order is deliberately preserved: four De Anza listings tie exactly on
+    # price and size, and both this module and recommend() break that tie by
+    # stable sort, so reordering here would pick a different one of the four.
+    return out
+
+
+def build(snapshot: list[dict], hist: list[dict], out_path: str,
+          defaults: dict) -> str:
+    rows = _records(snapshot, hist)
+    if not rows:
+        # Skip the page, don't kill the process: a snapshot with nothing priced
+        # (every site blocked, a network blip) still has history charts to write
+        # and a report to email, and those are exactly what you want on the run
+        # that went wrong.
+        print("No priced rows with a size - skipping explorer.html.")
+        return ""
+
+    sqfts = [r["sqft"] for r in rows]
+    rents = [r["rent"] for r in rows]
+    config = {
+        "minSqft": defaults.get("min_sqft", 750),
+        "minRent": defaults.get("min_rent", 3200),
+        "maxRent": defaults.get("max_rent", 3900),
+        "top": defaults.get("top", 5),
+        "sqftLo": int(min(sqfts)), "sqftHi": int(max(sqfts)),
+        "rentLo": int(min(rents) // 50 * 50), "rentHi": int(-(-max(rents) // 50) * 50),
+        "cities": sorted({r["city"] for r in rows}),
+        "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+
+    html = (_PAGE
+            .replace("__DATA__", json.dumps(rows, separators=(",", ":")))
+            .replace("__CONFIG__", json.dumps(config, separators=(",", ":"))))
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"Wrote {out_path}  ({len(rows)} plans, {len(html) / 1024:.0f} KB)")
+    return out_path
+
+
+# --------------------------------------------------------------------------- #
+# The page. Placeholders are substituted rather than formatted, so the CSS and
+# JS braces below need no escaping.
+# --------------------------------------------------------------------------- #
+_PAGE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1B1B rent explorer</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb;
+    --panel: #ffffff;
+    --ink: #0b0b0b;
+    --ink-muted: #52514e;
+    --ink-faint: #86847d;
+    --grid: #d8d7d2;
+    --line: #e6e5e0;
+    --accent: #2a78d6;
+    --c1: #2a78d6;
+    --c2: #eb6834;
+    --c3: #1baf7a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface: #1a1a19;
+      --panel: #232322;
+      --ink: #ffffff;
+      --ink-muted: #c3c2b7;
+      --ink-faint: #8d8b81;
+      --grid: #3a3a38;
+      --line: #333331;
+      --accent: #3987e5;
+      --c1: #3987e5;
+      --c2: #d95926;
+      --c3: #199e70;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+  h1 { font-size: 21px; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-faint); font-size: 12.5px; margin: 0 0 22px; }
+  h2 { font-size: 14px; margin: 30px 0 10px; font-weight: 600; }
+  h2 .n { color: var(--ink-faint); font-weight: 400; }
+
+  /* controls */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px 24px; }
+  .ctl label { display: block; font-size: 11.5px; letter-spacing: .04em;
+               text-transform: uppercase; color: var(--ink-faint); margin-bottom: 7px; }
+  .ctl .row { display: flex; align-items: center; gap: 9px; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); height: 20px; }
+  input[type=number] {
+    width: 76px; padding: 5px 7px; font: inherit; font-size: 13px;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--grid); border-radius: 6px;
+  }
+  .checks { display: flex; flex-direction: column; gap: 7px; }
+  .checks label { display: flex; align-items: center; gap: 7px; text-transform: none;
+                  letter-spacing: 0; font-size: 13px; color: var(--ink); margin: 0; }
+  input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+  .reset { margin-top: 14px; font-size: 12.5px; background: none; border: 0;
+           color: var(--accent); cursor: pointer; padding: 0; }
+  .reset:hover { text-decoration: underline; }
+
+  /* chart */
+  .chartbox { position: relative; margin-top: 22px; overflow-x: auto; }
+  svg { display: block; width: 100%; min-width: 620px; height: auto; }
+  .gridline { stroke: var(--grid); stroke-width: 1; opacity: .5; }
+  .axis { fill: var(--ink-faint); font-size: 11px; }
+  .axis-title { fill: var(--ink-muted); font-size: 12px; }
+  .dot { cursor: pointer; }
+  .band { fill: var(--accent); opacity: .07; }
+  .band-edge { fill: none; stroke: var(--accent); stroke-width: 1;
+               stroke-dasharray: 4 3; opacity: .55; }
+  .median { stroke: var(--ink-faint); stroke-width: 1.2; stroke-dasharray: 5 4; opacity: .6; }
+  .picklabel { fill: var(--ink); font-size: 11px; font-weight: 700; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px;
+            font-size: 12px; color: var(--ink-muted); align-items: center; }
+  .legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+              margin-right: 6px; vertical-align: -1px; }
+  .legend .hollow { background: none; border: 2px solid var(--ink-faint); }
+
+  #tip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--panel); border: 1px solid var(--grid); border-radius: 8px;
+    padding: 9px 11px; font-size: 12px; line-height: 1.45; max-width: 260px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.14); z-index: 5;
+  }
+  #tip b { display: block; font-size: 12.5px; margin-bottom: 2px; }
+  #tip .muted { color: var(--ink-faint); }
+
+  /* tables */
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 11px; border-bottom: 1px solid var(--line);
+           white-space: nowrap; }
+  th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+       color: var(--ink-faint); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .rank { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .down { color: #1a8f5a; font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) { .down { color: #35c489; } }
+  .flat { color: var(--ink-faint); }
+  .note { color: var(--ink-muted); font-size: 12.5px; margin: 0 0 10px; }
+  .empty { padding: 26px; text-align: center; color: var(--ink-faint);
+           border: 1px dashed var(--grid); border-radius: 10px; }
+  ul.alts { margin: 0; padding-left: 18px; color: var(--ink-muted); font-size: 13px; }
+  ul.alts li { margin-bottom: 5px; }
+  ul.alts b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>1B1B rent vs. size</h1>
+  <p class="sub" id="sub"></p>
+
+  <div class="panel controls">
+    <div class="ctl">
+      <label for="sqft">Minimum size</label>
+      <div class="row">
+        <input type="range" id="sqft">
+        <input type="number" id="sqftN" step="5"> <span class="axis">sq ft</span>
+      </div>
+    </div>
+    <div class="ctl">
+      <label for="rmin">Rent floor</label>
+      <div class="row"><input type="range" id="rmin" step="25"><input type="number" id="rminN" step="25"></div>
+    </div>
+    <div class="ctl">
+      <label for="rmax">Rent ceiling</label>
+      <div class="row"><input type="range" id="rmax" step="25"><input type="number" id="rmaxN" step="25"></div>
+    </div>
+    <div class="ctl">
+      <label for="top">Picks</label>
+      <div class="row"><input type="range" id="top" min="1" max="15" step="1"><input type="number" id="topN" min="1" max="15"></div>
+    </div>
+    <div class="ctl">
+      <label>Options</label>
+      <div class="checks">
+        <label><input type="checkbox" id="collapse"> Collapse duplicate operators</label>
+        <label><input type="checkbox" id="hideStart"> Hide &ldquo;starting at&rdquo; prices</label>
+      </div>
+    </div>
+    <div class="ctl">
+      <label>City</label>
+      <div class="checks" id="cities"></div>
+      <button class="reset" id="reset">Reset to defaults</button>
+    </div>
+  </div>
+
+  <div class="chartbox">
+    <svg id="chart" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet"
+         role="img" aria-label="Scatter plot of rent against size"></svg>
+    <div id="tip"></div>
+  </div>
+  <div class="legend" id="legend"></div>
+
+  <h2>Picks <span class="n" id="pickCount"></span></h2>
+  <div id="picks"></div>
+
+  <div id="altsWrap" hidden>
+    <h2>Same price, same operator</h2>
+    <p class="note">Identical size and rent to a pick above, so interchangeable on
+      paper &mdash; worth a call if the pick has nothing left.</p>
+    <ul class="alts" id="alts"></ul>
+  </div>
+
+  <div id="demWrap" hidden>
+    <h2>Cheaper on paper, but the price is a floor</h2>
+    <p class="note">These advertise &ldquo;1 bed starting at&rdquo; rather than a real
+      unit price, so they rank below every exact quote. Call before counting on them.</p>
+    <ul class="alts" id="dem"></ul>
+  </div>
+</div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script type="application/json" id="config">__CONFIG__</script>
+<script>
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const CFG  = JSON.parse(document.getElementById("config").textContent);
+const KEY  = "apt-explorer-v1";
+
+const $ = id => document.getElementById(id);
+const money = n => "$" + Math.round(n).toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const defaults = () => ({
+  minSqft: CFG.minSqft, minRent: CFG.minRent, maxRent: CFG.maxRent,
+  top: CFG.top, collapse: true, hideStart: false, cities: CFG.cities.slice()
+});
+
+let state = defaults();
+try {                                   // some file:// contexts throw on access
+  const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (saved && typeof saved === "object") state = Object.assign(state, saved);
+} catch (e) { /* render the defaults instead */ }
+
+/* ---------- ranking: mirrors recommend() in visualize.py ---------- */
+function compute() {
+  const cities = new Set(state.cities);
+  const matches = DATA.filter(d =>
+    d.sqft > state.minSqft && d.rent >= state.minRent && d.rent <= state.maxRent &&
+    cities.has(d.city) && (!state.hideStart || !d.start));
+
+  // exact prices outrank advertised floors, then best $/sq ft. No further
+  // tiebreak: Array.sort is stable, so exact ties keep scrape order and match
+  // what recommend() picks in Python.
+  const ranked = matches.slice().sort((a, b) =>
+    (a.start - b.start) || (a.ppsf - b.ppsf));
+
+  const picks = [], alternates = new Map(), owner = new Map(), seenCom = new Set();
+  for (const d of ranked) {
+    const cluster = d.dom + "|" + d.rent + "|" + d.sqft;
+    if (state.collapse && owner.has(cluster)) {
+      const who = owner.get(cluster);
+      if (!alternates.has(who)) alternates.set(who, []);
+      alternates.get(who).push(d);
+      continue;
+    }
+    if (seenCom.has(d.com)) continue;      // one unit per building, always
+    if (picks.length < state.top) {
+      picks.push(d);
+      seenCom.add(d.com);
+      owner.set(cluster, d.name);
+    }
+  }
+  const worst = picks.length ? Math.max(...picks.map(p => p.ppsf)) : 0;
+  const demoted = ranked.filter(d => d.start && d.ppsf < worst).slice(0, 3);
+  return { matches, picks, alternates, demoted };
+}
+
+/* ---------- chart ---------- */
+const W = 900, H = 520, M = { t: 18, r: 22, b: 52, l: 68 };
+const PW = W - M.l - M.r, PH = H - M.t - M.b;
+const xLo = CFG.sqftLo - 30, xHi = CFG.sqftHi + 30;
+const yLo = CFG.rentLo - 60, yHi = CFG.rentHi + 60;
+const sx = v => M.l + (v - xLo) / (xHi - xLo) * PW;
+const sy = v => M.t + PH - (v - yLo) / (yHi - yLo) * PH;
+
+const ppsfAll = DATA.map(d => d.ppsf).sort((a, b) => a - b);
+const MEDIAN = ppsfAll[Math.floor(ppsfAll.length / 2)];
+const CITY_COLOR = {};
+CFG.cities.forEach((c, i) => { CITY_COLOR[c] = ["var(--c1)", "var(--c2)", "var(--c3)"][i % 3]; });
+
+function ticks(lo, hi, n) {
+  const raw = (hi - lo) / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v);
+  return out;
+}
+
+function renderChart(res) {
+  const inSet = new Set(res.matches);
+  const rank = new Map(res.picks.map((d, i) => [d, i + 1]));
+  const p = [];
+
+  for (const v of ticks(yLo, yHi, 6)) {
+    p.push(`<line class="gridline" x1="${M.l}" y1="${sy(v)}" x2="${W - M.r}" y2="${sy(v)}"/>`,
+           `<text class="axis" x="${M.l - 10}" y="${sy(v) + 4}" text-anchor="end">${money(v)}</text>`);
+  }
+  for (const v of ticks(xLo, xHi, 7)) {
+    p.push(`<line class="gridline" x1="${sx(v)}" y1="${M.t}" x2="${sx(v)}" y2="${M.t + PH}"/>`,
+           `<text class="axis" x="${sx(v)}" y="${M.t + PH + 20}" text-anchor="middle">${v.toLocaleString()}</text>`);
+  }
+  p.push(`<text class="axis-title" x="${M.l + PW / 2}" y="${H - 10}" text-anchor="middle">Size (sq ft)</text>`,
+         `<text class="axis-title" transform="translate(16,${M.t + PH / 2}) rotate(-90)" text-anchor="middle">Rent (min)</text>`);
+
+  // the filter box, clamped to the plot
+  const bx = Math.max(M.l, Math.min(sx(state.minSqft), W - M.r));
+  const by = Math.max(M.t, sy(Math.min(state.maxRent, yHi)));
+  const bb = Math.min(M.t + PH, sy(Math.max(state.minRent, yLo)));
+  if (bb > by && W - M.r > bx) {
+    p.push(`<rect class="band" x="${bx}" y="${by}" width="${W - M.r - bx}" height="${bb - by}"/>`,
+           `<rect class="band-edge" x="${bx}" y="${by}" width="${W - M.r - bx}" height="${bb - by}"/>`);
+  }
+
+  // median $/sq ft reference
+  const my1 = MEDIAN * xLo, my2 = MEDIAN * xHi;
+  p.push(`<clipPath id="clip"><rect x="${M.l}" y="${M.t}" width="${PW}" height="${PH}"/></clipPath>`,
+         `<line class="median" clip-path="url(#clip)" x1="${sx(xLo)}" y1="${sy(my1)}" x2="${sx(xHi)}" y2="${sy(my2)}"/>`);
+
+  DATA.forEach((d, i) => {
+    const on = inSet.has(d), c = CITY_COLOR[d.city] || "var(--c3)";
+    const fill = d.start ? "none" : c;
+    p.push(`<circle class="dot" data-i="${i}" cx="${sx(d.sqft)}" cy="${sy(d.rent)}" r="5.5"`
+         + ` fill="${fill}" stroke="${d.start ? c : "var(--surface)"}" stroke-width="${d.start ? 2 : 1.4}"`
+         + ` opacity="${on ? 1 : 0.18}"/>`);
+  });
+  for (const [d, n] of rank) {
+    p.push(`<circle cx="${sx(d.sqft)}" cy="${sy(d.rent)}" r="11" fill="none" stroke="var(--ink)" stroke-width="1.4"/>`,
+           `<text class="picklabel" x="${sx(d.sqft) + 14}" y="${sy(d.rent) - 8}">${n}</text>`);
+  }
+  $("chart").innerHTML = p.join("");
+}
+
+/* ---------- tooltip ---------- */
+const tip = $("tip");
+$("chart").addEventListener("mouseover", e => {
+  const el = e.target.closest(".dot");
+  if (!el) return;
+  const d = DATA[+el.dataset.i];
+  const spark = d.hist.length > 1
+    ? `<span class="muted">${d.hist.map(h => money(h[1])).join(" → ")}</span>` : "";
+  tip.innerHTML = `<b>${esc(d.name)}</b><span class="muted">${esc(d.plan)}</span><br>`
+    + `${d.sqft.toLocaleString()} sq ft &middot; ${money(d.rent)} &middot; $${d.ppsf.toFixed(2)}/sq ft<br>`
+    + `<span class="muted">${esc(d.city)}${d.start ? " &middot; starting-at price" : ""}</span>`
+    + (spark ? "<br>" + spark : "");
+  const box = $("chart").getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.min(r.left - box.left + 16, box.width - 250) + "px";
+  tip.style.top = (r.top - box.top - 10) + "px";
+  tip.style.opacity = 1;
+});
+$("chart").addEventListener("mouseout", e => {
+  if (e.target.closest(".dot")) tip.style.opacity = 0;
+});
+
+/* ---------- lists ---------- */
+function trendCell(t) {
+  if (t === "flat" || t === "new") return `<span class="flat">${t}</span>`;
+  return `<span class="down">${esc(t)}</span>`;
+}
+
+function renderList(res) {
+  $("pickCount").textContent =
+    `— ${res.matches.length} of ${DATA.length} plans match`;
+
+  if (!res.picks.length) {
+    $("picks").innerHTML = `<div class="empty">Nothing matches these filters.<br>`
+      + `Try widening the rent range or lowering the size floor.</div>`;
+  } else {
+    $("picks").innerHTML = `<div class="scroll"><table><thead><tr>`
+      + `<th class="num">#</th><th>Community</th><th>Plan</th><th class="num">Size</th>`
+      + `<th class="num">Rent</th><th class="num">$/sq ft</th><th>City</th>`
+      + `<th>Rent history</th><th>Phone</th></tr></thead><tbody>`
+      + res.picks.map((d, i) => `<tr>`
+        + `<td class="num rank">${i + 1}</td>`
+        + `<td><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></td>`
+        + `<td>${esc(d.plan)}</td>`
+        + `<td class="num">${d.sqft.toLocaleString()}</td>`
+        + `<td class="num">${money(d.rent)}${d.start ? "*" : ""}</td>`
+        + `<td class="num">$${d.ppsf.toFixed(2)}</td>`
+        + `<td>${esc(d.city)}</td>`
+        + `<td>${trendCell(d.trend)}</td>`
+        + `<td>${esc(d.phone)}</td></tr>`).join("")
+      + `</tbody></table></div>`
+      + (res.picks.some(d => d.start)
+          ? `<p class="note">* an advertised &ldquo;starting at&rdquo; floor, not a quoted unit price.</p>` : "");
+  }
+
+  const alts = [];
+  for (const [who, list] of res.alternates)
+    for (const d of list)
+      alts.push(`<li><b>${esc(d.name)}</b> &mdash; ${d.sqft.toLocaleString()} sq ft, `
+        + `${money(d.rent)} <span class="muted">(${esc(d.addr)})</span> &mdash; same listing as ${esc(who)}</li>`);
+  $("altsWrap").hidden = !alts.length;
+  $("alts").innerHTML = alts.join("");
+
+  $("demWrap").hidden = !res.demoted.length;
+  $("dem").innerHTML = res.demoted.map(d =>
+    `<li><b>${esc(d.name)}</b> ${esc(d.plan)} &mdash; ${d.sqft.toLocaleString()} sq ft, `
+    + `${money(d.rent)} ($${d.ppsf.toFixed(2)}/sq ft)</li>`).join("");
+}
+
+/* ---------- wiring ---------- */
+function render() {
+  const res = compute();
+  renderChart(res);
+  renderList(res);
+  $("sub").textContent = `${DATA.length} priced floor plans · scraped `
+    + `${CFG.generated} · median $${MEDIAN.toFixed(2)}/sq ft`;
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* fine */ }
+}
+
+function pair(slider, number, key, lo, hi, after) {
+  const s = $(slider), n = $(number);
+  s.min = n.min = lo; s.max = n.max = hi;
+
+  // echo=false leaves the number box alone: writing to a field while someone is
+  // still typing in it overwrites their keystrokes mid-entry
+  const apply = (raw, echo) => {
+    const v = Math.max(lo, Math.min(hi, Number(raw)));
+    if (!Number.isFinite(v)) return;
+    state[key] = v;
+    s.value = v;
+    if (echo) n.value = v;
+    if (after) after(key);
+    render();
+  };
+
+  s.addEventListener("input", () => apply(s.value, true));
+  // 'input', not just 'change': change only fires on blur or Enter, so typing a
+  // number and looking at the page appeared to do nothing at all
+  n.addEventListener("input", () => {
+    const raw = Number(n.value);
+    if (n.value.trim() === "" || !Number.isFinite(raw)) return;
+    if (raw < lo || raw > hi) return;      // half-typed - wait for blur to clamp
+    apply(raw, false);
+  });
+  n.addEventListener("change", () => apply(n.value.trim() === "" ? state[key] : n.value, true));
+
+  return {
+    sync: () => { s.value = n.value = state[key]; },
+    syncSlider: () => { s.value = state[key]; },
+  };
+}
+
+// The rent pair must not cross over. The control you just moved wins and pushes
+// the other one, rather than snapping back and appearing to ignore your input.
+// Only the control being pushed gets its number box rewritten; the one you are
+// typing in keeps your keystrokes.
+const clampRent = changed => {
+  if (state.minRent <= state.maxRent) return;
+  if (changed === "minRent") {
+    state.maxRent = state.minRent;
+    ui.rmax.sync();
+    ui.rmin.syncSlider();
+  } else {
+    state.minRent = state.maxRent;
+    ui.rmin.sync();
+    ui.rmax.syncSlider();
+  }
+};
+
+const ui = {};
+ui.sqft = pair("sqft", "sqftN", "minSqft", CFG.sqftLo, CFG.sqftHi);
+ui.rmin = pair("rmin", "rminN", "minRent", CFG.rentLo, CFG.rentHi, clampRent);
+ui.rmax = pair("rmax", "rmaxN", "maxRent", CFG.rentLo, CFG.rentHi, clampRent);
+ui.top  = pair("top", "topN", "top", 1, 15);
+
+$("cities").innerHTML = CFG.cities.map(c =>
+  `<label><input type="checkbox" class="city" value="${esc(c)}"> ${esc(c)}</label>`).join("");
+document.querySelectorAll(".city").forEach(cb => cb.addEventListener("change", () => {
+  state.cities = [...document.querySelectorAll(".city:checked")].map(c => c.value);
+  render();
+}));
+for (const id of ["collapse", "hideStart"])
+  $(id).addEventListener("change", () => { state[id] = $(id).checked; render(); });
+
+function syncUI() {
+  Object.values(ui).forEach(u => u.sync());
+  $("collapse").checked = state.collapse;
+  $("hideStart").checked = state.hideStart;
+  document.querySelectorAll(".city").forEach(cb => { cb.checked = state.cities.includes(cb.value); });
+}
+$("reset").addEventListener("click", () => { state = defaults(); syncUI(); render(); });
+
+$("legend").innerHTML = CFG.cities.map(c =>
+    `<span><i style="background:${CITY_COLOR[c]}"></i>${esc(c)}</span>`).join("")
+  + `<span><i class="hollow"></i>&ldquo;starting at&rdquo; price</span>`
+  + `<span>&#9711; numbered = a pick</span>`
+  + `<span>faded = outside the filter</span>`;
+
+syncUI();
+render();
+</script>
+</body>
+</html>
+"""

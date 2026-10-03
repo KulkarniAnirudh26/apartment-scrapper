@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+apartments.csv
+rent_history.csv
+tracked_apartments.json
+run.log
+pivot*.csv
+*.png
+.run-in-progress
+run.log.1
+plots/email-preview.*

@@ -1,0 +1,2 @@
+We built a 174-site rent scraper that runs twice a day, renders JavaScript when sites fight back, and emails a ranked shortlist by price per square foot.
+Market size: one (1) bedroom.

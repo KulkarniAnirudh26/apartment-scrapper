@@ -1,0 +1,11 @@
+@echo off
+REM Scheduler-friendly wrapper: runs the scraper with this folder's venv and
+REM appends a timestamped line-set to rent_history.csv. Point a Windows Task
+REM Scheduler action at this file (Start in = this folder).
+REM Any extra args are passed through, e.g.:  run.bat --no-browser
+REM Bare run.bat writes CSVs only. For the full report - charts, explorer.html
+REM and the emailed shortlist - schedule:  run.bat --visualize --email
+cd /d "%~dp0"
+echo ==== run started %date% %time% ==== >> "%~dp0run.log"
+"%~dp0venv\Scripts\python.exe" "%~dp0scraper.py" %* >> "%~dp0run.log" 2>&1
+echo ==== run finished %date% %time% (exit %errorlevel%) ==== >> "%~dp0run.log"

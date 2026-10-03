@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Apartment 1B1B Rent Scraper — brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="data.js"></script>
+    <style>
+      :root {
+        --surface: #fcfcfb;
+        --panel: #ffffff;
+        --ink: #0b0b0b;
+        --muted: #52514e;
+        --grid: #d8d7d2;
+        --line: #e6e5e0;
+        --accent: #2a78d6;
+        --orange: #c4531f;
+        --green: #1a7f50;
+        --term: #1a1a19;
+        --term-panel: #232322;
+        --term-ink: #ffffff;
+        --term-muted: #c3c2b7;
+        --term-accent: #6aa8f0;
+        --sans: "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, sans-serif;
+        --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: var(--surface); font-family: var(--sans); color: var(--ink);
+      }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+      .clip { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; }
+      .light { background: var(--surface); color: var(--ink); }
+      .mono { font-family: var(--mono); }
+
+      /* ---------- scene 1: terminal ---------- */
+      #s1 { background: var(--term); color: var(--term-ink); }
+      .win {
+        position: absolute; left: 110px; top: 80px; width: 1700px; height: 920px;
+        background: var(--term-panel); border: 1px solid #333331; border-radius: 18px; overflow: hidden;
+      }
+      .win-bar {
+        height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 26px;
+        border-bottom: 1px solid #333331; color: var(--term-muted); font: 500 24px var(--mono);
+      }
+      .win-bar i { width: 16px; height: 16px; border-radius: 50%; background: #4a4a47; display: inline-block; }
+      .win-bar span { margin-left: 18px; }
+      .term-body { position: absolute; left: 40px; right: 40px; top: 96px; height: 640px; overflow: hidden; }
+      #cmd { font: 600 34px var(--mono); color: var(--term-ink); height: 52px; white-space: pre; }
+      #cmd b { color: var(--term-accent); font-weight: 600; }
+      #logwin { position: absolute; left: 0; right: 0; top: 70px; bottom: 0; overflow: hidden; }
+      #log { position: absolute; left: 0; right: 0; top: 0; }
+      #log div { height: 44px; font: 400 27px/44px var(--mono); white-space: pre; color: var(--term-muted); opacity: 0; }
+      #log div.u { color: var(--term-ink); }
+      #log div.ok { color: #7fd6a8; }
+      #log div.done { color: var(--term-ink); font-weight: 700; }
+      .status {
+        position: absolute; left: 0; right: 0; bottom: 0; height: 120px; padding: 0 40px;
+        border-top: 1px solid #333331; display: flex; align-items: center; justify-content: space-between;
+        font: 600 34px var(--mono); color: var(--term-ink);
+      }
+      .status .lbl { color: var(--term-muted); font-weight: 400; }
+      #count { color: var(--term-accent); }
+      #caption {
+        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        background: var(--surface); color: var(--ink); padding: 38px 64px; border-radius: 20px;
+        font: 700 96px/1.05 var(--sans); letter-spacing: -0.03em; white-space: nowrap;
+        box-shadow: 0 30px 80px rgba(0,0,0,.45); opacity: 0;
+      }
+
+      /* ---------- scene 2: pipeline ---------- */
+      .kicker { font: 600 26px var(--mono); color: var(--accent); letter-spacing: .02em; }
+      .h1 { font: 700 72px/1.08 var(--sans); letter-spacing: -0.03em; }
+      .sub { font: 400 34px/1.35 var(--sans); color: var(--muted); }
+      #s2 .head { position: absolute; left: 150px; top: 120px; }
+      #s2 .head .sub { margin-top: 14px; }
+      .cards { position: absolute; left: 150px; top: 430px; width: 1620px; height: 470px; }
+      .card {
+        position: absolute; top: 0; width: 470px; height: 470px; padding: 44px 40px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+        box-shadow: 0 18px 50px rgba(20,20,20,.07); opacity: 0;
+      }
+      .card .n { font: 600 28px var(--mono); color: var(--accent); }
+      .card h3 { font: 700 54px/1.1 var(--sans); letter-spacing: -0.02em; margin-top: 18px; }
+      .card p { font: 400 30px/1.4 var(--sans); color: var(--muted); margin-top: 18px; }
+      .pill {
+        position: absolute; left: 40px; bottom: 40px; padding: 10px 20px; border-radius: 999px;
+        font: 600 26px var(--mono); background: #e5f4ec; color: var(--green);
+      }
+      .pill.warn { background: #fbece4; color: var(--orange); }
+      .arrow { position: absolute; top: 205px; width: 70px; text-align: center; font: 400 60px var(--sans); color: var(--muted); opacity: 0; }
+
+      /* ---------- scene 3: explorer ---------- */
+      #s3 .head { position: absolute; left: 120px; top: 60px; }
+      #s3 .h1 { font-size: 56px; }
+      #s3 .sub { font-size: 26px; margin-top: 6px; }
+      .controls {
+        position: absolute; left: 120px; top: 190px; width: 1680px; height: 118px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+        display: flex; align-items: center; padding: 0 36px; gap: 56px;
+      }
+      .ctl .l { font: 600 18px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+      .ctl .v { font: 600 34px var(--mono); margin-top: 6px; }
+      .ctl.slider { width: 640px; }
+      .track { position: relative; height: 8px; border-radius: 4px; background: var(--line); margin-top: 22px; width: 440px; display: inline-block; vertical-align: middle; }
+      .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); }
+      .knob {
+        position: absolute; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+        background: var(--accent); border: 4px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      }
+      #ceilV { display: inline-block; vertical-align: middle; margin: 18px 0 0 26px; font: 700 36px var(--mono); color: var(--accent); }
+      #chart { position: absolute; left: 100px; top: 330px; }
+      #cursor { position: absolute; left: 0; top: 0; width: 44px; height: 44px; opacity: 0; z-index: 10; }
+      .picks {
+        position: absolute; left: 1330px; top: 350px; width: 470px;
+      }
+      .picks h4 { font: 700 34px var(--sans); }
+      .picks h4 span { color: var(--muted); font-weight: 400; }
+      .prow {
+        margin-top: 20px; padding: 22px 24px; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 14px; opacity: 0; position: relative;
+      }
+      .prow .rk {
+        position: absolute; left: -18px; top: 22px; width: 40px; height: 40px; border-radius: 50%;
+        background: var(--accent); color: #fff; font: 700 22px/40px var(--sans); text-align: center;
+      }
+      .prow .nm { font: 700 30px var(--sans); padding-left: 18px; }
+      .prow .dt { font: 400 24px var(--mono); color: var(--muted); padding-left: 18px; margin-top: 6px; }
+      .prow .dt b { color: var(--ink); }
+
+      /* ---------- scene 4: history ---------- */
+      #s4 .head { position: absolute; left: 150px; top: 90px; }
+      #s4 .h1 { font-size: 64px; }
+      .chip {
+        position: absolute; right: 150px; top: 110px; padding: 14px 24px; border-radius: 12px;
+        background: var(--panel); border: 1px solid var(--line); font: 500 26px var(--mono); color: var(--muted);
+      }
+      #hist { position: absolute; left: 110px; top: 270px; }
+      .badge {
+        position: absolute; padding: 12px 24px; border-radius: 999px; font: 700 40px var(--mono); opacity: 0;
+      }
+      #drop { background: #e5f4ec; color: var(--green); }
+      #rise { background: #fbece4; color: var(--orange); font-size: 28px; padding: 8px 18px; }
+
+      /* ---------- scene 5: inbox ---------- */
+      .mail {
+        position: absolute; left: 310px; top: 150px; width: 1300px; padding: 44px 54px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 26px;
+        box-shadow: 0 30px 80px rgba(20,20,20,.12);
+      }
+      .mail.ghost { top: 116px; left: 350px; width: 1220px; height: 200px; box-shadow: none; opacity: 0; }
+      .ghost .gt { font: 600 28px var(--mono); color: var(--muted); }
+      .from { display: flex; align-items: center; gap: 22px; }
+      .av { width: 72px; height: 72px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 36px/72px var(--sans); text-align: center; }
+      .from .who { font: 700 34px var(--sans); }
+      .from .to { font: 400 26px var(--sans); color: var(--muted); margin-top: 2px; }
+      .from .time { margin-left: auto; font: 700 40px var(--mono); color: var(--accent); }
+      .subj { font: 700 64px var(--sans); letter-spacing: -0.02em; margin-top: 34px; }
+      .filt { font: 400 28px var(--sans); color: var(--muted); margin-top: 10px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+      th { text-align: left; font: 600 20px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 0 14px; border-bottom: 1px solid var(--line); }
+      td { font: 400 30px var(--sans); padding: 18px 0; border-bottom: 1px solid var(--line); }
+      td.n, th.n { text-align: right; font-family: var(--mono); }
+      td .dn { color: var(--green); } td .up { color: var(--orange); }
+
+      /* ---------- scene 6: outro ---------- */
+      #s6 .center { position: absolute; left: 0; right: 0; top: 330px; text-align: center; }
+      #title { font: 700 112px/1.05 var(--sans); letter-spacing: -0.035em; opacity: 0; }
+      #tag { font: 500 60px var(--sans); color: var(--muted); margin-top: 40px; opacity: 0; }
+      #tag .one { position: relative; color: var(--ink); font-weight: 700; }
+      #uline { position: absolute; left: 0; right: 0; bottom: -10px; height: 8px; border-radius: 4px; background: var(--accent); transform-origin: left center; }
+      #foot { position: absolute; left: 0; right: 0; bottom: 110px; text-align: center; font: 400 30px var(--mono); color: var(--muted); opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="24.4" data-width="1920" data-height="1080">
+
+      <!-- ============ Scene 1: the log ============ -->
+      <div id="s1" class="clip" data-start="0" data-duration="5.1" data-track-index="0">
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>run.log — RentScrape · 08:30</span></div>
+          <div class="term-body">
+            <div id="cmd"><b>$</b> </div>
+            <div id="logwin"><div id="log"></div></div>
+          </div>
+          <div class="status">
+            <div><span class="lbl">site </span><span id="count">[1/174]</span></div>
+            <div><span class="lbl">1B1B only · </span>Santa Clara · Sunnyvale · Mountain View · Cupertino</div>
+          </div>
+        </div>
+        <div id="caption" data-layout-allow-overlap>Target: one (1) bedroom.</div>
+      </div>
+
+      <!-- ============ Scene 2: pipeline ============ -->
+      <div id="s2" class="clip light" data-start="5.1" data-duration="5.1" data-track-index="0">
+        <div class="head">
+          <div class="kicker">scrape_site(url)</div>
+          <div class="h1" style="margin-top:14px">Per site, in order.</div>
+          <div class="sub">Stops the moment it's confident. 174 sites, ~40s each.</div>
+        </div>
+        <div class="cards">
+          <div class="card" id="c1" style="left:0">
+            <div class="n">01</div><h3>HTTP fetch</h3>
+            <p>JSON-LD, __NEXT_DATA__ and DOM heuristics.</p>
+            <div class="pill">0 tokens</div>
+          </div>
+          <div class="arrow" id="a1" style="left:505px">→</div>
+          <div class="card" id="c2" style="left:575px">
+            <div class="n">02</div><h3>Playwright</h3>
+            <p>Headless Chromium for client-side pricing.</p>
+            <div class="pill">0 tokens</div>
+          </div>
+          <div class="arrow" id="a2" style="left:1080px">→</div>
+          <div class="card" id="c3" style="left:1150px">
+            <div class="n">03</div><h3>Claude</h3>
+            <p>Only with --use-llm, only when still unsure.</p>
+            <div class="pill warn">the only path that spends tokens</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ Scene 3: explorer ============ -->
+      <div id="s3" class="clip light" data-start="10.2" data-duration="4.5" data-track-index="0">
+        <div class="head">
+          <div class="h1">1B1B rent vs. size</div>
+          <div class="sub">24 floor plans · plots/explorer.html</div>
+        </div>
+        <div class="controls">
+          <div class="ctl"><div class="l">Minimum size</div><div class="v">750 sq ft</div></div>
+          <div class="ctl"><div class="l">Rent floor</div><div class="v">$3,200</div></div>
+          <div class="ctl slider">
+            <div class="l">Rent ceiling</div>
+            <div class="track" id="track"><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div><span id="ceilV">$4,400</span>
+          </div>
+          <div class="ctl"><div class="l">Picks</div><div class="v">3</div></div>
+        </div>
+        <svg id="chart" width="1180" height="720" viewBox="0 0 1180 720"></svg>
+        <div class="picks">
+          <h4>Picks <span>by $/sq ft</span></h4>
+          <div class="prow" id="p1"><div class="rk">1</div><div class="nm">Estancia · Santa Clara</div><div class="dt">790 sq ft · <b>$3,464</b> · $4.38</div></div>
+          <div class="prow" id="p2"><div class="rk">2</div><div class="nm">Encasa · Sunnyvale</div><div class="dt">811 sq ft · <b>$3,711</b> · $4.58</div></div>
+          <div class="prow" id="p3"><div class="rk">3</div><div class="nm">Birch Creek · Mtn View</div><div class="dt">800 sq ft · <b>$3,630</b> · $4.54</div></div>
+        </div>
+        <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15.5 L12.5 22.5 L15.5 21 L12 14 L19 14 Z" fill="#0b0b0b" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- ============ Scene 4: history ============ -->
+      <div id="s4" class="clip light" data-start="14.7" data-duration="3.6" data-track-index="0">
+        <div class="head">
+          <div class="kicker">Encasa · 1x1a · 811 sq ft</div>
+          <div class="h1" style="margin-top:12px">Rent, every run.</div>
+        </div>
+        <div class="chip">rent_history.csv · append-only</div>
+        <svg id="hist" width="1700" height="700" viewBox="0 0 1700 700"></svg>
+        <div class="badge" id="drop">−$120</div>
+        <div class="badge" id="rise">Birch Creek +$459</div>
+      </div>
+
+      <!-- ============ Scene 5: inbox ============ -->
+      <div id="s5" class="clip light" data-start="18.3" data-duration="2.6" data-track-index="0">
+        <div class="mail ghost" id="ghost"><div class="gt">20:30 · Top 3 picks</div></div>
+        <div class="mail" id="mail">
+          <div class="from">
+            <div class="av">R</div>
+            <div><div class="who">RentScrape</div><div class="to">to me · explorer.html attached</div></div>
+            <div class="time">08:30</div>
+          </div>
+          <div class="subj">Top 3 picks</div>
+          <div class="filt">Filter: &gt; 750 sq ft, rent $3,200–$3,900 · ranked by price per sq ft</div>
+          <table>
+            <tr><th>Community</th><th class="n">Size</th><th class="n">Rent</th><th class="n">$/sq ft</th><th class="n">Trend</th></tr>
+            <tr><td>Estancia at Santa Clara</td><td class="n">790</td><td class="n">$3,464</td><td class="n">$4.38</td><td class="n"><span class="dn">−40</span></td></tr>
+            <tr><td>Encasa · Sunnyvale</td><td class="n">811</td><td class="n">$3,711</td><td class="n">$4.58</td><td class="n"><span class="dn">−120</span></td></tr>
+            <tr><td>Birch Creek · Mountain View</td><td class="n">800</td><td class="n">$3,630</td><td class="n">$4.54</td><td class="n"><span class="up">+459</span></td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============ Scene 6: outro ============ -->
+      <div id="s6" class="clip light" data-start="20.9" data-duration="3.5" data-track-index="0">
+        <div class="center">
+          <div id="title">Apartment 1B1B Rent Scraper</div>
+          <div id="tag">174 sites. 2 hours. <span class="one">1 bedroom.<span id="uline"></span></span></div>
+        </div>
+        <div id="foot">python scraper.py --visualize --email</div>
+      </div>
+
+      <!-- ============ Audio ============ -->
+      <audio id="bed" data-start="0" data-duration="24.4" data-track-index="10" data-volume="1" src="assets/music/bed.wav"></audio>
+      <audio id="vo1" data-start="0.30" data-duration="4.67" data-track-index="3" data-volume="1" src="assets/vo/s1.wav"></audio>
+      <audio id="vo2" data-start="5.15" data-duration="4.91" data-track-index="3" data-volume="1" src="assets/vo/s2.wav"></audio>
+      <audio id="vo3" data-start="10.25" data-duration="4.25" data-track-index="3" data-volume="1" src="assets/vo/s3.wav"></audio>
+      <audio id="vo4" data-start="14.75" data-duration="3.39" data-track-index="3" data-volume="1" src="assets/vo/s4.wav"></audio>
+      <audio id="vo5" data-start="18.35" data-duration="2.37" data-track-index="3" data-volume="1" src="assets/vo/s5.wav"></audio>
+      <audio id="vo6" data-start="21.00" data-duration="2.09" data-track-index="3" data-volume="1" src="assets/vo/s6.wav"></audio>
+      <!-- typing -->
+      <audio id="k1" data-start="0.22" data-duration="0.3" data-track-index="11" data-volume="0.5" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="k2" data-start="0.40" data-duration="0.3" data-track-index="12" data-volume="0.5" src="assets/sfx/keypress-011.wav"></audio>
+      <audio id="k3" data-start="0.58" data-duration="0.3" data-track-index="13" data-volume="0.5" src="assets/sfx/keypress-019.wav"></audio>
+      <audio id="k4" data-start="0.80" data-duration="0.3" data-track-index="14" data-volume="0.55" src="assets/sfx/keypress-027.wav"></audio>
+      <!-- hook caption, beat-locked 3.70 -->
+      <audio id="x1" data-start="3.66" data-duration="0.6" data-track-index="11" data-volume="0.6" src="assets/sfx/drop_001.ogg"></audio>
+      <!-- pipeline cards, beat-grid 5.80 / 6.86 / 7.91 -->
+      <audio id="x2" data-start="5.78" data-duration="0.6" data-track-index="11" data-volume="0.6" src="assets/sfx/card-place-1.ogg"></audio>
+      <audio id="x3" data-start="6.84" data-duration="0.6" data-track-index="12" data-volume="0.6" src="assets/sfx/card-place-2.ogg"></audio>
+      <audio id="x4" data-start="7.89" data-duration="0.6" data-track-index="13" data-volume="0.6" src="assets/sfx/card-place-3.ogg"></audio>
+      <!-- slider grab + picks (beat-locked 12.65) -->
+      <audio id="x5" data-start="11.33" data-duration="0.4" data-track-index="11" data-volume="0.6" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="x6" data-start="12.61" data-duration="0.6" data-track-index="12" data-volume="0.6" src="assets/sfx/drop_001.ogg"></audio>
+      <!-- email arrives -->
+      <audio id="x7" data-start="18.34" data-duration="0.8" data-track-index="11" data-volume="0.55" src="assets/sfx/card-slide-2.ogg"></audio>
+      <!-- outro accent, beat-locked 22.65 -->
+      <audio id="x8" data-start="22.63" data-duration="0.6" data-track-index="11" data-volume="0.7" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+    </div>
+
+    <script>
+      const SVGNS = "http://www.w3.org/2000/svg";
+      const svgEl = (tag, attrs, parent) => {
+        const e = document.createElementNS(SVGNS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (parent) parent.appendChild(e);
+        return e;
+      };
+      const money = n => "$" + Math.round(n).toLocaleString("en-US");
+      const tl = gsap.timeline({ paused: true });
+
+      /* ================= Scene 1: terminal ================= */
+      const CMD = "python scraper.py --visualize --email";
+      const cmdEl = document.getElementById("cmd");
+      const typed = { n: 0 };
+      const drawCmd = () => { cmdEl.innerHTML = "<b>$</b> " + CMD.slice(0, Math.round(typed.n)); };
+      drawCmd();
+      tl.fromTo(typed, { n: 0 }, { n: CMD.length, duration: 0.7, ease: "none", onUpdate: drawCmd }, 0.2);
+
+      // real log format from scraper.py main() / scrape_site()
+      const LOG = [
+        ["u", "Using tracked list (174 sites); Places not called."],
+        ["u", "[1/174] https://www.encasaliving.com/"],
+        ["ok", "    -> 3 1B1B unit(s), method=embedded, status=ok, 12s"],
+        ["u", "[2/174] https://www.equityapartments.com/.../estancia-at-santa-clara"],
+        ["", "    ...no confident pricing over HTTP, rendering with browser"],
+        ["ok", "    -> 1 1B1B unit(s), method=playwright, status=ok, 41s"],
+        ["u", "[3/174] https://www.udr.com/.../mountain-view/birch-creek"],
+        ["", "    ...no confident pricing over HTTP, rendering with browser"],
+        ["ok", "    -> 1 1B1B unit(s), method=playwright+start, status=ok, 38s"],
+        ["u", "[4/174] https://sevensmv.com"],
+        ["ok", "    -> 6 1B1B unit(s), method=dom, status=ok, 9s"],
+        ["u", "[5/174] https://www.deanzaproperties.com/.../forge-homestead"],
+        ["ok", "    -> 3 1B1B unit(s), method=playwright, status=ok, 44s"],
+        ["u", "[68/174] https://www.equityapartments.com/.../lorien-apartments"],
+        ["ok", "    -> 7 1B1B unit(s), method=playwright+start, status=ok, 52s"],
+        ["u", "[121/174] http://www.equityapartments.com/.../city-gate-at-cupertino"],
+        ["ok", "    -> 2 1B1B unit(s), method=playwright, status=ok, 39s"],
+        ["u", "[174/174] https://prometheusapartments.com/.../the-markham"],
+        ["ok", "    -> 2 1B1B unit(s), method=embedded, status=ok, 14s"],
+        ["done", "Scraped 174 site(s) in 115 min (40s each)."],
+      ];
+      const logEl = document.getElementById("log");
+      const LINE = 44, VISIBLE = 12, T0 = 1.0, STEP = 0.13;
+      LOG.forEach(([cls, text], i) => {
+        const d = document.createElement("div");
+        if (cls) d.className = cls;
+        d.textContent = text;
+        logEl.appendChild(d);
+        const t = T0 + i * STEP;
+        tl.set(d, { opacity: 1 }, t);
+        if (i >= VISIBLE) tl.to(logEl, { y: -(i - VISIBLE + 1) * LINE, duration: 0.1, ease: "power1.out" }, t);
+      });
+      const countEl = document.getElementById("count");
+      const ctr = { v: 1 };
+      const drawCount = () => { countEl.textContent = "[" + Math.round(ctr.v) + "/174]"; };
+      drawCount();
+      tl.fromTo(ctr, { v: 1 }, { v: 174, duration: (LOG.length - 2) * STEP, ease: "power2.in", onUpdate: drawCount }, T0 + STEP);
+      // beat-locked: 3.70s
+      tl.fromTo("#caption", { opacity: 0, scale: 1.18 }, { opacity: 1, scale: 1, duration: 0.28, ease: "back.out(2)" }, 3.70);
+      tl.to(".win", { opacity: 0.35, duration: 0.3 }, 3.70);
+
+      /* ================= Scene 2: pipeline ================= */
+      tl.fromTo("#s2 .head", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 5.15);
+      // beat-grid: card 1 at 5.80s, card 2 at 6.86s, card 3 at 7.91s (every other beat, readable)
+      [["#c1", 5.80], ["#c2", 6.86], ["#c3", 7.91]].forEach(([sel, t]) => {
+        tl.fromTo(sel, { opacity: 0, y: 60 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, t);
+      });
+      tl.fromTo("#a1", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.25 }, 6.70);
+      tl.fromTo("#a2", { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.25 }, 7.75);
+
+      /* ================= Scene 3: explorer scatter ================= */
+      const CW = 1180, CH = 720, PL = 110, PR = 30, PT = 20, PB = 80;
+      const SX0 = 650, SX1 = 950, RY0 = 3000, RY1 = 5000;
+      const xs = s => PL + (s - SX0) / (SX1 - SX0) * (CW - PL - PR);
+      const ys = r => PT + (RY1 - r) / (RY1 - RY0) * (CH - PT - PB);
+      const chart = document.getElementById("chart");
+      const COLORS = { "Santa Clara": "#2a78d6", "Sunnyvale": "#1a9a6c", "Mountain View": "#d95926", "Cupertino": "#7a5af0" };
+      for (let r = 3000; r <= 5000; r += 500) {
+        svgEl("line", { x1: PL, x2: CW - PR, y1: ys(r), y2: ys(r), stroke: "#d8d7d2" }, chart);
+        const t = svgEl("text", { x: PL - 14, y: ys(r) + 8, "text-anchor": "end", fill: "#52514e", "font-size": 22, "font-family": "Cascadia Mono, Consolas, monospace" }, chart);
+        t.textContent = money(r);
+      }
+      for (let s = 700; s <= 950; s += 50) {
+        const t = svgEl("text", { x: xs(s), y: CH - PB + 36, "text-anchor": "middle", fill: "#52514e", "font-size": 22, "font-family": "Cascadia Mono, Consolas, monospace" }, chart);
+        t.textContent = s;
+      }
+      const ax = svgEl("text", { x: (PL + CW - PR) / 2, y: CH - 8, "text-anchor": "middle", fill: "#52514e", "font-size": 22, "font-family": "Segoe UI, sans-serif" }, chart);
+      ax.textContent = "Size (sq ft)";
+      // median $/sq ft line
+      const pp = APT.pts.map(p => p.r / p.s).sort((a, b) => a - b);
+      const med = (pp[(pp.length - 1) >> 1] + pp[pp.length >> 1]) / 2;
+      svgEl("line", { x1: xs(SX0), y1: ys(med * SX0), x2: xs(SX1), y2: ys(med * SX1), stroke: "#86847d", "stroke-width": 2.5, "stroke-dasharray": "10 8" }, chart);
+      const medL = svgEl("text", { x: xs(SX1) - 8, y: ys(med * SX1) - 14, "text-anchor": "end", fill: "#52514e", "font-size": 22, "font-family": "Cascadia Mono, Consolas, monospace" }, chart);
+      medL.textContent = "median $" + med.toFixed(2) + "/sq ft";
+      // filter band (ceiling animates)
+      const band = svgEl("rect", { x: xs(750), width: xs(SX1) - xs(750), fill: "#2a78d6", "fill-opacity": 0.08, stroke: "#2a78d6", "stroke-width": 2, "stroke-dasharray": "8 6", opacity: 0 }, chart);
+      const dotsG = svgEl("g", {}, chart);
+      const CEIL0 = 4400, CEIL1 = 3900, DRAG0 = 11.4, DRAG1 = 12.4;
+      const PICKS = { "Estancia|Unnamed plan": 1, "Encasa|1x1a": 2, "Birch Creek|1 Bed | 1 Bath | 800 Sq. Ft": 3 };
+      const pickDots = [];
+      APT.pts.forEach((p, i) => {
+        const col = COLORS[p.c] || "#52514e";
+        const c = svgEl("circle", {
+          cx: xs(p.s), cy: ys(p.r), r: 11,
+          fill: p.st ? "#ffffff" : col, stroke: col, "stroke-width": p.st ? 4 : 2, opacity: 0,
+        }, dotsG);
+        // accents: dots pop in on a fast stagger (texture, not text)
+        tl.fromTo(c, { opacity: 0 }, { opacity: 0.95, duration: 0.15 }, 10.3 + i * 0.025);
+        const inBand = p.s > 750 && p.r >= 3200;
+        if (!inBand || p.r > CEIL0) tl.to(c, { opacity: 0.18, duration: 0.25 }, 10.95);
+        else if (p.r > CEIL1) tl.to(c, { opacity: 0.18, duration: 0.2 }, DRAG0 + (CEIL0 - p.r) / (CEIL0 - CEIL1) * (DRAG1 - DRAG0));
+        const rank = PICKS[p.n + "|" + p.p];
+        if (rank) pickDots.push([rank, p]);
+      });
+      tl.to(band, { attr: { opacity: 1 }, duration: 0.3 }, 10.95);
+      // slider + band driven by one proxy
+      const TR0 = 3200, TR1 = 4850, TRW = 440;
+      const knob = document.getElementById("knob"), fill = document.getElementById("fill"), ceilV = document.getElementById("ceilV");
+      const ceil = { c: CEIL0 };
+      const drawCeil = () => {
+        const f = (ceil.c - TR0) / (TR1 - TR0);
+        knob.style.left = (f * TRW) + "px";
+        fill.style.width = (f * TRW) + "px";
+        ceilV.textContent = money(Math.round(ceil.c / 25) * 25);
+        band.setAttribute("y", ys(ceil.c));
+        band.setAttribute("height", ys(3200) - ys(ceil.c));
+      };
+      drawCeil();
+      tl.fromTo(ceil, { c: CEIL0 }, { c: CEIL1, duration: DRAG1 - DRAG0, ease: "power1.inOut", onUpdate: drawCeil }, DRAG0);
+      // cursor: glide in, grab, drag with the knob
+      const trackBox = { left: 120 + 36, top: 0 }; // positioned from layout below
+      const knobPos = c => {
+        const tr = document.getElementById("track");
+        const f = (c - TR0) / (TR1 - TR0);
+        return { x: tr.offsetLeft + tr.offsetParent.offsetLeft + tr.offsetParent.offsetParent.offsetLeft + f * TRW,
+                 y: tr.offsetTop + tr.offsetParent.offsetTop + tr.offsetParent.offsetParent.offsetTop + 4 };
+      };
+      const k0 = knobPos(CEIL0), k1 = knobPos(CEIL1);
+      tl.fromTo("#cursor", { opacity: 0, x: k0.x + 240, y: k0.y + 260 }, { opacity: 1, x: k0.x - 6, y: k0.y - 2, duration: 0.55, ease: "power2.out" }, 10.75);
+      tl.to("#cursor", { scale: 0.85, duration: 0.08, transformOrigin: "10% 10%" }, 11.33);
+      tl.to("#cursor", { x: k1.x - 6, y: k1.y - 2, duration: DRAG1 - DRAG0, ease: "power1.inOut" }, DRAG0);
+      tl.to("#cursor", { scale: 1, duration: 0.08 }, DRAG1);
+      tl.to("#cursor", { opacity: 0, duration: 0.3 }, 12.9);
+      // beat-locked: 12.65s — picks pop on chart and in the list
+      pickDots.forEach(([rank, p]) => {
+        const g = svgEl("g", { opacity: 0 }, chart);
+        svgEl("circle", { cx: xs(p.s), cy: ys(p.r), r: 22, fill: "none", stroke: "#2a78d6", "stroke-width": 4 }, g);
+        const bx = xs(p.s) + (rank === 3 ? -44 : 40), by = ys(p.r) + (rank === 1 ? 44 : -40);
+        svgEl("circle", { cx: bx, cy: by, r: 20, fill: "#2a78d6" }, g);
+        const t = svgEl("text", { x: bx, y: by + 8, "text-anchor": "middle", fill: "#fff", "font-size": 22, "font-weight": 700, "font-family": "Segoe UI, sans-serif" }, g);
+        t.textContent = rank;
+        tl.fromTo(g, { opacity: 0 }, { opacity: 1, duration: 0.2 }, 12.65 + (rank - 1) * 0.12);
+      });
+      ["#p1", "#p2", "#p3"].forEach((sel, i) => {
+        tl.fromTo(sel, { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out" }, 12.65 + i * 0.2);
+      });
+
+      /* ================= Scene 4: rent history ================= */
+      const hist = document.getElementById("hist");
+      const HW = 1700, HH = 700, HL = 150, HR = 260, HT = 30, HB = 90;
+      const day = s => { const [m, d, hm] = s.split(" "); const [h, mi] = hm.split(":").map(Number); return (m === "Sep" ? 31 : 0) + Number(d) + (h + mi / 60) / 24; };
+      const D0 = day(APT.hist.encasa_t[0]), D1 = day(APT.hist.encasa_t[APT.hist.encasa_t.length - 1]);
+      const HY0 = 3100, HY1 = 3950;
+      const hx = d => HL + (d - D0) / (D1 - D0) * (HW - HL - HR);
+      const hy = r => HT + (HY1 - r) / (HY1 - HY0) * (HH - HT - HB);
+      for (let r = 3200; r <= 3900; r += 100) {
+        svgEl("line", { x1: HL, x2: HW - HR, y1: hy(r), y2: hy(r), stroke: "#e6e5e0" }, hist);
+        if (r % 200 === 0) {
+          const t = svgEl("text", { x: HL - 16, y: hy(r) + 8, "text-anchor": "end", fill: "#52514e", "font-size": 24, "font-family": "Cascadia Mono, Consolas, monospace" }, hist);
+          t.textContent = money(r);
+        }
+      }
+      [["Aug 29", day("Aug 29 12:00")], ["Sep 5", day("Sep 5 12:00")], ["Sep 13", day("Sep 13 12:00")]].forEach(([lbl, d]) => {
+        const t = svgEl("text", { x: Math.min(hx(d), HW - HR), y: HH - HB + 44, "text-anchor": "middle", fill: "#52514e", "font-size": 24, "font-family": "Cascadia Mono, Consolas, monospace" }, hist);
+        t.textContent = lbl;
+      });
+      const path = (vals, times) => vals.map((v, i) => (i ? "L" : "M") + hx(day(times[i])).toFixed(1) + " " + hy(v).toFixed(1)).join(" ");
+      const birch = svgEl("path", { d: path(APT.hist.birch, APT.hist.birch_t), fill: "none", stroke: "#d95926", "stroke-width": 4, "stroke-opacity": 0.45, pathLength: 1, "stroke-dasharray": 1, "stroke-dashoffset": 1 }, hist);
+      const enc = svgEl("path", { d: path(APT.hist.encasa, APT.hist.encasa_t), fill: "none", stroke: "#2a78d6", "stroke-width": 7, "stroke-linejoin": "round", pathLength: 1, "stroke-dasharray": 1, "stroke-dashoffset": 1 }, hist);
+      const e0 = APT.hist.encasa[0], e1 = APT.hist.encasa[APT.hist.encasa.length - 1];
+      const endX = hx(D1), endY = hy(e1);
+      const endDot = svgEl("circle", { cx: endX, cy: endY, r: 12, fill: "#2a78d6", opacity: 0 }, hist);
+      const startL = svgEl("text", { x: hx(D0) + 6, y: hy(e0) - 22, fill: "#0b0b0b", "font-size": 30, "font-weight": 600, "font-family": "Cascadia Mono, Consolas, monospace", opacity: 0 }, hist);
+      startL.textContent = money(e0);
+      const endL = svgEl("text", { x: endX + 26, y: endY + 12, fill: "#0b0b0b", "font-size": 40, "font-weight": 700, "font-family": "Cascadia Mono, Consolas, monospace", opacity: 0 }, hist);
+      endL.textContent = money(e1);
+      tl.fromTo("#s4 .head, #s4 .chip", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 14.75);
+      tl.to(startL, { attr: { opacity: 1 }, duration: 0.2 }, 14.95);
+      tl.to(enc, { attr: { "stroke-dashoffset": 0 }, duration: 1.5, ease: "power1.inOut" }, 15.0);
+      tl.to(birch, { attr: { "stroke-dashoffset": 0 }, duration: 1.2, ease: "power1.inOut" }, 15.4);
+      tl.to([endDot, endL], { attr: { opacity: 1 }, duration: 0.2 }, 16.5);
+      const histBox = { left: 110, top: 270 };
+      gsap.set("#drop", { left: histBox.left + endX + 20, top: histBox.top + endY + 40 });
+      const b1 = APT.hist.birch[APT.hist.birch.length - 1];
+      gsap.set("#rise", { left: histBox.left + endX + 20, top: histBox.top + hy(b1) + 70 });
+      tl.fromTo("#drop", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 16.65);
+      tl.fromTo("#rise", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 16.95);
+
+      /* ================= Scene 5: inbox ================= */
+      tl.fromTo("#mail", { opacity: 0, y: 140 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 18.35);
+      tl.fromTo("#ghost", { opacity: 0 }, { opacity: 0.6, duration: 0.3 }, 18.9);
+
+      /* ================= Scene 6: outro ================= */
+      // beat: 21.07s title, 21.59s tagline; beat-locked 22.65s underline
+      tl.fromTo("#title", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 21.07);
+      tl.fromTo("#tag", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 21.59);
+      tl.fromTo("#uline", { scaleX: 0 }, { scaleX: 1, duration: 0.3, ease: "power2.out" }, 22.65);
+      tl.fromTo("#foot", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 22.9);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
